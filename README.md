@@ -1,2 +1,2 @@
-# Cron-metro-autom-tico-para-atletismo
+# Cronomêtro Automático para Atletismo
 Projeto para a disciplina de "Projeto Integrador II".
