@@ -34,7 +34,6 @@ void handleCaptivePortal() {
   IPAddress apIP = WiFi.softAPIP();
   String redirectURL = "http://" + apIP.toString() + "/";
 
-  // Log para debug no Serial
   Serial.print("Captive Portal detectado: ");
   Serial.println(server.uri());
 
@@ -119,7 +118,6 @@ const char* html_page = R"rawliteral(
       document.getElementById('display').innerHTML = "Correndo...";
       document.getElementById('status').innerText = "Aguardando cruzamentos...";
       
-      // Envia o tempo e a configuração de raias
       fetch(`/start?t=${tLargada}&raias=${qtdRaias}`).then(() => {
         intervaloPoll = setInterval(checarStatus, 200);
       });
@@ -129,7 +127,6 @@ const char* html_page = R"rawliteral(
       fetch('/status')
         .then(response => response.json())
         .then(data => {
-          // Atualiza a tela com os tempos parciais ou finais
           let displayHtml = "";
           data.tempos.forEach((t, i) => {
             const tempoStr = t > 0 ? t.toFixed(3) + " s" : "---";
@@ -143,7 +140,6 @@ const char* html_page = R"rawliteral(
             document.getElementById('btnLargada').disabled = false;
             document.getElementById('btnLargada').innerText = "NOVA LARGADA";
             
-            // Adiciona ao Histórico
             const linhaHist = `<b>Corrida ${contadorCorridas}</b><br>` + 
               data.tempos.map((t, i) => `R${i+1}: ${t.toFixed(3)}s`).join(' | ');
             
@@ -162,31 +158,21 @@ void setup() {
   Serial.begin(115200);
   tfLunaSerial.begin(115200, SERIAL_8N1, 16, 17);
   
-  // ==============================================================================
-  // CAPTIVE PORTAL: Intercepta URLs de deteccao dos smartphones
-  // ==============================================================================
-  // Android
+  // CAPTIVE PORTAL
   server.on("/generate_204", HTTP_GET, handleCaptivePortal);
   server.on("/gen_204", HTTP_GET, handleCaptivePortal);
-  // iOS / macOS
   server.on("/hotspot-detect.html", HTTP_GET, handleCaptivePortal);
   server.on("/captive.apple.com", HTTP_GET, handleCaptivePortal);
   server.on("/library/test/success.html", HTTP_GET, handleCaptivePortal);
-  // Windows
   server.on("/connecttest.txt", HTTP_GET, handleCaptivePortal);
   server.on("/ncsi.txt", HTTP_GET, handleCaptivePortal);
-  // Firefox / Ubuntu
   server.on("/detectportal.firefox.com", HTTP_GET, handleCaptivePortal);
   server.on("/canonical.html", HTTP_GET, handleCaptivePortal);
-
-  // Redireciona QUALQUER outra requisicao desconhecida para a pagina principal
   server.onNotFound(handleCaptivePortal);
 
-  // ---------------------------------------------------------
-  // SOLUÇÃO PARA NÃO PERDER DADOS MÓVEIS (Gateway 0.0.0.0)
-  // ---------------------------------------------------------
+  // GATEWAY
   IPAddress local_IP(192, 168, 4, 1);
-  IPAddress gateway(0, 0, 0, 0); // Gateway nulo avisa ao celular que não há internet aqui
+  IPAddress gateway(0, 0, 0, 0); 
   IPAddress subnet(255, 255, 255, 0);
   WiFi.softAPConfig(local_IP, gateway, subnet);
   
@@ -214,14 +200,16 @@ void setup() {
       if(numeroRaias < 1) numeroRaias = 1;
       if(numeroRaias > 8) numeroRaias = 8;
       
-      // Zera o progresso da corrida anterior
       raiasFinalizadas = 0;
       for(int i=0; i<8; i++) temposRaias[i] = 0.0;
 
-      // 1. Acorda o LIDAR para começar a atirar o laser
+      // 1. Acorda o LIDAR
       tfLunaSerial.write(ligar_sensor, 5);
       
-      // 2. Esvazia buffer sujo
+      // 2. CORREÇÃO: Dá 50ms para o hardware do sensor ligar fisicamente e enviar o "lixo" inicial
+      delay(50);
+      
+      // 3. Esvazia buffer sujo
       while (tfLunaSerial.available()) {
         tfLunaSerial.read();
       }
@@ -233,7 +221,6 @@ void setup() {
   });
 
   server.on("/status", []() {
-    // Monta o JSON com a lista (array) de tempos
     String json = "{\"estado\":" + String(estado) + ", \"tempos\":[";
     for(int i=0; i<numeroRaias; i++) {
       json += String(temposRaias[i], 3);
@@ -245,7 +232,6 @@ void setup() {
 
   server.begin();
 
-  // Configurações iniciais do LIDAR (Acelera e Salva)
   uint8_t cmd_250Hz[] = {0x5A, 0x06, 0x03, 0xFA, 0x00, 0x00};
   tfLunaSerial.write(cmd_250Hz, 6); 
   delay(100); 
@@ -254,7 +240,6 @@ void setup() {
   tfLunaSerial.write(cmd_save, 4); 
   delay(100);
   
-  // SOLUÇÃO DE ENERGIA: Desliga o laser assim que termina de configurar
   tfLunaSerial.write(desligar_sensor, 5);
   Serial.println("TF-Luna configurado para 250Hz e aguardando em modo DORMIR!");
 }
@@ -276,34 +261,35 @@ void loop() {
         int strength = amp_L + (amp_H << 8);
 
         if (estado == 1) {
-          // Ignora a zona cega (0 a 20cm).
-          if (strength > 100 && distance > 5) {
+          
+          long long tempoDecorrido = (long long)getTempoSincronizado() - (long long)tempoLargada;
+          
+          // "Janela Cega" de 500ms. Ignora falsos disparos no exato momento da largada
+          if (tempoDecorrido > 500) {
             
-            // LÓGICA MULTI-LANE: Descobre a raia pela divisão da distância (1.22m = 122cm)
-            int indiceRaia = (distance / 10); 
-            
-            // Só entra se a raia for válida (dentro das selecionadas) e ainda não tiver tempo gravado
-            if (indiceRaia < numeroRaias && temposRaias[indiceRaia - 1] == 0.0) {
+            if (strength > 100 && distance > 5) {
               
-              tempoChegada = getTempoSincronizado();
-              long long diferenca = (long long)tempoChegada - (long long)tempoLargada;
-              if (diferenca < 0) diferenca = 0; 
+              int indiceRaia = (distance / 10); 
               
-              // Grava o tempo na raia específica
-              temposRaias[indiceRaia] = diferenca / 1000.0;
-              raiasFinalizadas++;
-              
-              Serial.print("Raia "); Serial.print(indiceRaia + 1);
-              Serial.print(" cruzou! (Distância: "); Serial.print(distance);
-              Serial.print("cm) - Tempo: "); Serial.println(temposRaias[indiceRaia], 3);
-              
-              // Se todo mundo já passou, encerra a prova
-              if (raiasFinalizadas >= numeroRaias) {
-                estado = 2; // Finaliza
+              if (indiceRaia < numeroRaias && temposRaias[indiceRaia] == 0.0) {
                 
-                // Manda o sensor dormir de volta para preservar a vida útil
-                tfLunaSerial.write(desligar_sensor, 5);
-                Serial.println("Todas as raias finalizaram. Sensor DESLIGADO.");
+                tempoChegada = getTempoSincronizado();
+                long long diferenca = (long long)tempoChegada - (long long)tempoLargada;
+                if (diferenca < 0) diferenca = 0; 
+                
+                temposRaias[indiceRaia] = diferenca / 1000.0;
+                raiasFinalizadas++;
+                
+                Serial.print("Raia "); Serial.print(indiceRaia + 1);
+                Serial.print(" cruzou! (Distância: "); Serial.print(distance);
+                Serial.print("cm) - Tempo: "); Serial.println(temposRaias[indiceRaia], 3);
+                
+                if (raiasFinalizadas >= numeroRaias) {
+                  estado = 2; // Finaliza
+                  
+                  tfLunaSerial.write(desligar_sensor, 5);
+                  Serial.println("Todas as raias finalizaram. Sensor DESLIGADO.");
+                }
               }
             }
           }
