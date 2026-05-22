@@ -1,0 +1,555 @@
+	<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ChronoTrack</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+  :root{--bg:#0a0a0f;--surface:#13131c;--card:#1a1a28;--accent:#e8c840;--accent2:#ff4d1c;--text:#f0f0f0;--muted:#888;--border:#2a2a3a;--green:#2ecc71;--blue:#3498db;--red:#e74c3c}
+  html,body{height:100%}
+  body{background:var(--bg);color:var(--text);font-family:'Barlow Condensed',sans-serif;overflow-x:hidden;-webkit-font-smoothing:antialiased}
+  .app{max-width:480px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column}
+
+  /* Header */
+  .header{background:var(--surface);border-bottom:2px solid var(--accent);padding:12px 16px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:10}
+  .logo{font-size:24px;font-weight:800;letter-spacing:3px;color:var(--accent);text-transform:uppercase}
+  .logo span{color:var(--text)}
+  .conn-badge{display:flex;align-items:center;gap:6px;font-size:12px;padding:5px 12px;border-radius:20px;letter-spacing:.5px;font-weight:600;background:#0a1a0a;border:1px solid #1a4a1a;color:var(--green);transition:.3s}
+  .conn-badge.offline{background:#1a0a0a;border-color:#4a1a1a;color:var(--red)}
+  .conn-dot{width:7px;height:7px;border-radius:50%;background:currentColor;animation:pulse 1.5s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
+
+  /* Tabs */
+  .tabs{display:flex;background:var(--surface);border-bottom:1px solid var(--border)}
+  .tab{flex:1;padding:13px 8px;font-size:13px;font-weight:700;letter-spacing:1.5px;text-align:center;text-transform:uppercase;color:var(--muted);cursor:pointer;border-bottom:3px solid transparent;transition:.2s;display:flex;align-items:center;justify-content:center;gap:6px}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+  .tab i{font-size:16px}
+
+  /* Content */
+  .content{flex:1;padding:16px;overflow-y:auto}
+  .section{display:none}
+  .section.active{display:block}
+
+  /* Sync bar */
+  .sync-bar{background:#0d0d1a;border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:8px}
+  .sync-text{font-size:12px;color:var(--muted);flex:1}
+  .sync-btn{background:var(--surface);border:1px solid var(--border);border-radius:6px;color:var(--text);font-family:'Barlow Condensed',sans-serif;font-size:12px;font-weight:600;letter-spacing:.5px;padding:5px 12px;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:4px}
+  .sync-btn:active{opacity:.7}
+
+  /* Mode selection */
+  .label{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);margin-bottom:8px;margin-top:14px}
+  .mode-cards{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:4px}
+  .mode-card{background:var(--card);border:2px solid var(--border);border-radius:12px;padding:18px 12px;text-align:center;cursor:pointer;transition:.2s;user-select:none}
+  .mode-card:active{transform:scale(.97)}
+  .mode-card.selected{border-color:var(--accent);background:#1e1e10}
+  .mode-card i{font-size:30px;display:block;margin-bottom:8px;color:var(--muted)}
+  .mode-card.selected i{color:var(--accent)}
+  .mode-card .title{font-size:15px;font-weight:700;letter-spacing:1px;text-transform:uppercase}
+  .mode-card .sub{font-size:11px;color:var(--muted);margin-top:4px}
+
+  /* Lane selector */
+  .lanes-section{overflow:hidden;transition:.3s}
+  .lanes-row{display:flex;gap:8px;flex-wrap:wrap}
+  .lane-btn{width:48px;height:48px;border-radius:8px;background:var(--card);border:2px solid var(--border);font-size:20px;font-weight:700;color:var(--muted);cursor:pointer;transition:.2s;display:flex;align-items:center;justify-content:center;user-select:none}
+  .lane-btn:active{transform:scale(.93)}
+  .lane-btn.active{background:#1e1e10;border-color:var(--accent);color:var(--accent)}
+
+  /* Race name input */
+  .race-name-wrap{margin-top:4px}
+  .race-name-input{width:100%;background:var(--card);border:1.5px solid var(--border);border-radius:8px;color:var(--text);font-family:'Barlow Condensed',sans-serif;font-size:16px;font-weight:600;padding:11px 14px;outline:none;transition:.2s}
+  .race-name-input:focus{border-color:var(--accent)}
+
+  /* Timer display */
+  .timer-display{background:var(--card);border:2px solid var(--border);border-radius:16px;padding:24px 16px;text-align:center;margin:14px 0}
+  .timer-display.running{border-color:var(--green);box-shadow:0 0 0 1px rgba(46,204,113,.15)}
+  .timer-display.done{border-color:var(--accent)}
+  .state-badge{display:inline-block;padding:4px 16px;border-radius:20px;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;border:1px solid var(--border);color:var(--muted);background:transparent;margin-bottom:12px;transition:.3s}
+  .state-badge.running{border-color:var(--green);background:#0a1a0a;color:var(--green)}
+  .state-badge.done{border-color:var(--accent);background:#1a1a05;color:var(--accent)}
+  .timer-big{font-size:58px;font-weight:800;letter-spacing:3px;font-variant-numeric:tabular-nums;color:var(--accent);line-height:1;transition:.2s}
+  .timer-big.running{color:var(--green)}
+  .timer-label{font-size:12px;letter-spacing:1.5px;color:var(--muted);margin-top:8px;text-transform:uppercase}
+
+  /* Lanes results grid */
+  .lanes-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px}
+  .lane-result{background:var(--card);border:2px solid var(--border);border-radius:10px;padding:14px 10px;text-align:center;transition:.4s}
+  .lane-result.done{border-color:var(--green);background:#0d1a0d}
+  .lane-result.waiting{opacity:.6}
+  .lane-num{font-size:11px;letter-spacing:1.5px;color:var(--muted);text-transform:uppercase;margin-bottom:6px}
+  .lane-time{font-size:26px;font-weight:800;color:var(--green);font-variant-numeric:tabular-nums;line-height:1}
+  .lane-time.wait{font-size:20px;color:var(--muted)}
+
+  /* Main action button */
+  .btn-big{width:100%;padding:18px;border-radius:12px;border:none;font-family:'Barlow Condensed',sans-serif;font-size:20px;font-weight:800;letter-spacing:3px;text-transform:uppercase;cursor:pointer;margin-top:14px;transition:.15s;display:flex;align-items:center;justify-content:center;gap:10px}
+  .btn-big i{font-size:22px}
+  .btn-big:active{transform:scale(.97)}
+  .btn-start{background:var(--green);color:#000}
+  .btn-stop{background:var(--accent2);color:#fff}
+  .btn-new{background:var(--surface);color:var(--text);border:2px solid var(--accent)}
+
+  /* History */
+  .hist-toolbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+  .hist-toolbar h2{font-size:16px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}
+  .clear-btn{background:none;border:none;color:var(--accent2);font-size:12px;font-family:'Barlow Condensed',sans-serif;font-weight:700;letter-spacing:1px;text-transform:uppercase;cursor:pointer;padding:4px 0}
+  .hist-item{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px;margin-bottom:10px;cursor:pointer;transition:.2s;position:relative;overflow:hidden}
+  .hist-item::before{content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--border);transition:.2s}
+  .hist-item.single::before{background:var(--blue)}
+  .hist-item.multi::before{background:var(--accent)}
+  .hist-item:hover{border-color:#3a3a5a}
+  .hist-header-row{display:flex;justify-content:space-between;align-items:flex-start}
+  .hist-name{font-size:17px;font-weight:700;line-height:1.2}
+  .hist-meta{display:flex;gap:8px;align-items:center;margin-top:4px}
+  .hist-mode-badge{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:2px 8px;border-radius:4px;background:#1a1a10;color:var(--accent);border:1px solid #3a3a10}
+  .hist-mode-badge.single{background:#0a1020;color:var(--blue);border-color:#1a2a40}
+  .hist-date{font-size:11px;color:var(--muted)}
+  .hist-preview{margin-top:10px;font-size:13px;color:var(--muted)}
+  .hist-times{border-top:1px solid var(--border);margin-top:10px;padding-top:10px;display:none}
+  .hist-times.open{display:block}
+  .hist-time-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #1a1a28}
+  .hist-time-row:last-child{border:none}
+  .hist-time-label{font-size:13px;color:var(--muted)}
+  .hist-time-val{font-size:16px;font-weight:800;color:var(--green);font-variant-numeric:tabular-nums;letter-spacing:1px}
+  .hist-time-val.gold{color:var(--accent)}
+  .del-btn{background:none;border:none;color:#444;font-size:18px;cursor:pointer;padding:2px 6px;line-height:1;transition:.2s;flex-shrink:0}
+  .del-btn:hover{color:var(--accent2)}
+  .chevron{transition:transform .25s;display:inline-block;margin-left:4px;font-size:14px;color:var(--muted)}
+  .hist-times.open + .chevron{transform:rotate(180deg)}
+
+  .empty-state{text-align:center;padding:48px 20px;color:var(--muted)}
+  .empty-state i{font-size:48px;display:block;margin-bottom:16px;opacity:.25}
+  .empty-state p{font-size:15px;letter-spacing:.5px}
+
+  /* Toast */
+  .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(20px);background:#1e1e28;border:1px solid var(--border);color:var(--text);font-size:13px;font-weight:600;letter-spacing:.5px;padding:10px 20px;border-radius:24px;opacity:0;transition:.3s;pointer-events:none;white-space:nowrap;z-index:100}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* Scrollbar */
+  ::-webkit-scrollbar{width:4px}
+  ::-webkit-scrollbar-track{background:transparent}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="header">
+    <div class="logo">Chrono<span>Track</span></div>
+    <div class="conn-badge offline" id="conn-badge">
+      <span class="conn-dot"></span>
+      <span id="conn-text">Offline</span>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('corrida')" id="tab-corrida">
+      <i class="ti ti-player-play" aria-hidden="true"></i> Corrida
+    </div>
+    <div class="tab" onclick="switchTab('historico')" id="tab-historico">
+      <i class="ti ti-history" aria-hidden="true"></i> Histórico
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ===== CORRIDA ===== -->
+    <div class="section active" id="sec-corrida">
+
+      <div class="sync-bar">
+        <span class="sync-text" id="sync-status">Sincronize o relógio com o ESP-32 antes de iniciar</span>
+        <button class="sync-btn" onclick="syncTime()">
+          <i class="ti ti-refresh" aria-hidden="true"></i> Sincronizar
+        </button>
+      </div>
+
+      <div class="label">Modo de detecção</div>
+      <div class="mode-cards">
+        <div class="mode-card selected" id="mode-single" onclick="selectMode('single')">
+          <i class="ti ti-angle" aria-hidden="true"></i>
+          <div class="title">Single Lane</div>
+          <div class="sub">Sensor inclinado 70°</div>
+        </div>
+        <div class="mode-card" id="mode-multi" onclick="selectMode('multi')">
+          <i class="ti ti-layout-columns" aria-hidden="true"></i>
+          <div class="title">Multi Lane</div>
+          <div class="sub">Sensor em tripé</div>
+        </div>
+      </div>
+
+      <div class="lanes-section" id="lanes-section" style="display:none">
+        <div class="label">Número de raias</div>
+        <div class="lanes-row" id="lanes-row">
+          <div class="lane-btn" onclick="selectLanes(2)">2</div>
+          <div class="lane-btn" onclick="selectLanes(3)">3</div>
+          <div class="lane-btn" onclick="selectLanes(4)">4</div>
+          <div class="lane-btn" onclick="selectLanes(5)">5</div>
+          <div class="lane-btn" onclick="selectLanes(6)">6</div>
+        </div>
+      </div>
+
+      <div class="label">Nome da corrida</div>
+      <div class="race-name-wrap">
+        <input type="text" class="race-name-input" id="race-name" placeholder="Ex: 100m rasos · Treino" value="Corrida">
+      </div>
+
+      <div class="timer-display" id="timer-display-card">
+        <div>
+          <span class="state-badge" id="state-badge">AGUARDANDO</span>
+        </div>
+        <div class="timer-big" id="timer-big">00:00.000</div>
+        <div class="timer-label" id="timer-label">Pronto para largar</div>
+      </div>
+
+      <div class="lanes-grid" id="lanes-results" style="display:none"></div>
+
+      <button class="btn-big btn-start" id="main-btn" onclick="mainAction()">
+        <i class="ti ti-player-play" aria-hidden="true"></i>
+        <span>INICIAR</span>
+      </button>
+
+    </div>
+
+    <!-- ===== HISTÓRICO ===== -->
+    <div class="section" id="sec-historico">
+      <div class="hist-toolbar">
+        <h2>Histórico</h2>
+        <button class="clear-btn" onclick="clearHistory()">
+          <i class="ti ti-trash" aria-hidden="true" style="font-size:13px;vertical-align:-2px"></i> Limpar tudo
+        </button>
+      </div>
+      <div id="hist-list"></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────────
+let mode = 'single';
+let lanes = 3;
+let appState = 'idle'; // idle | running | done
+let timerInterval = null;
+let elapsed = 0;
+let startTs = 0;
+let laneResults = [];
+let pollInterval = null;
+let synced = false;
+let openHistItems = {};
+
+const ESP_IP = ''; // Deixe vazio — a página já é servida pelo ESP, usa origem relativa
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function fmtTime(ms) {
+  if (!ms || ms <= 0) return '--:--.---';
+  const m = Math.floor(ms / 60000);
+  const s = Math.floor((ms % 60000) / 1000);
+  const ms3 = ms % 1000;
+  return String(m).padStart(2,'0') + ':' + String(s).padStart(2,'0') + '.' + String(ms3).padStart(3,'0');
+}
+
+function showToast(msg, duration = 2200) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => t.classList.remove('show'), duration);
+}
+
+function $id(id) { return document.getElementById(id); }
+
+// ─── Tab navigation ───────────────────────────────────────────────────────────
+function switchTab(t) {
+  ['corrida','historico'].forEach(name => {
+    $id('tab-' + name).classList.toggle('active', name === t);
+    $id('sec-' + name).classList.toggle('active', name === t);
+  });
+  if (t === 'historico') renderHistory();
+}
+
+// ─── Mode & lane selection ────────────────────────────────────────────────────
+function selectMode(m) {
+  if (appState === 'running') return;
+  mode = m;
+  $id('mode-single').classList.toggle('selected', m === 'single');
+  $id('mode-multi').classList.toggle('selected', m === 'multi');
+  $id('lanes-section').style.display = m === 'multi' ? 'block' : 'none';
+  $id('lanes-results').style.display = 'none';
+}
+
+function selectLanes(n) {
+  if (appState === 'running') return;
+  lanes = n;
+  document.querySelectorAll('.lane-btn').forEach(el => {
+    el.classList.toggle('active', parseInt(el.textContent) === n);
+  });
+}
+
+// ─── Sync ─────────────────────────────────────────────────────────────────────
+async function syncTime() {
+  const t = Date.now();
+  try {
+    const r = await fetch('/sync?t=' + t, { signal: AbortSignal.timeout(3000) });
+    if (r.ok) {
+      synced = true;
+      const now = new Date();
+      $id('sync-status').textContent = 'Sincronizado às ' + now.toLocaleTimeString('pt-BR');
+      setOnline(true);
+      showToast('✓ Relógio sincronizado');
+    }
+  } catch(e) {
+    $id('sync-status').textContent = 'Falha — verifique a conexão Wi-Fi';
+    showToast('Sem conexão com o ESP-32');
+    setOnline(false);
+  }
+}
+
+function setOnline(on) {
+  const b = $id('conn-badge');
+  $id('conn-text').textContent = on ? 'Conectado' : 'Offline';
+  b.className = 'conn-badge' + (on ? '' : ' offline');
+}
+
+// ─── Timer ────────────────────────────────────────────────────────────────────
+function startTimer() {
+  startTs = Date.now();
+  timerInterval = setInterval(() => {
+    if (appState !== 'running') return;
+    elapsed = Date.now() - startTs;
+    $id('timer-big').textContent = fmtTime(elapsed);
+  }, 31);
+}
+
+function stopTimer() {
+  clearInterval(timerInterval);
+  timerInterval = null;
+}
+
+// ─── UI state updates ─────────────────────────────────────────────────────────
+function setUIState(st) {
+  appState = st;
+  const badge = $id('state-badge');
+  const card = $id('timer-display-card');
+  const big = $id('timer-big');
+  const label = $id('timer-label');
+  const btn = $id('main-btn');
+
+  badge.className = 'state-badge ' + (st === 'running' ? 'running' : st === 'done' ? 'done' : '');
+  badge.textContent = { idle: 'AGUARDANDO', running: 'EM ANDAMENTO', done: 'FINALIZADO' }[st];
+  card.className = 'timer-display ' + (st === 'running' ? 'running' : st === 'done' ? 'done' : '');
+  big.className = 'timer-big' + (st === 'running' ? ' running' : '');
+
+  if (st === 'idle') {
+    btn.className = 'btn-big btn-start';
+    btn.innerHTML = '<i class="ti ti-player-play" aria-hidden="true"></i><span>INICIAR</span>';
+    label.textContent = 'Pronto para largar';
+    big.textContent = '00:00.000';
+  } else if (st === 'running') {
+    btn.className = 'btn-big btn-stop';
+    btn.innerHTML = '<i class="ti ti-player-stop" aria-hidden="true"></i><span>PARAR</span>';
+    label.textContent = mode === 'single' ? 'Single Lane — aguardando atleta...' : 'Multi Lane · ' + lanes + ' raias';
+  } else if (st === 'done') {
+    btn.className = 'btn-big btn-new';
+    btn.innerHTML = '<i class="ti ti-rotate-clockwise" aria-hidden="true"></i><span>NOVA CORRIDA</span>';
+    label.textContent = 'Corrida finalizada!';
+  }
+}
+
+// ─── Lanes results grid ───────────────────────────────────────────────────────
+function renderLanesGrid() {
+  const g = $id('lanes-results');
+  if (mode !== 'multi') { g.style.display = 'none'; return; }
+  g.style.display = 'grid';
+  g.innerHTML = '';
+  for (let i = 0; i < lanes; i++) {
+    g.innerHTML += `
+      <div class="lane-result waiting" id="lr-${i}">
+        <div class="lane-num">Raia ${i + 1}</div>
+        <div class="lane-time wait" id="lt-${i}">--:--.---</div>
+      </div>`;
+  }
+}
+
+function updateLaneResult(i, ms) {
+  const card = $id('lr-' + i);
+  const timeEl = $id('lt-' + i);
+  if (card) { card.classList.remove('waiting'); card.classList.add('done'); }
+  if (timeEl) { timeEl.textContent = fmtTime(ms); timeEl.className = 'lane-time'; }
+}
+
+// ─── Main action ──────────────────────────────────────────────────────────────
+async function mainAction() {
+  if (appState === 'idle' || appState === 'done') {
+    // Start
+    const tLargada = Date.now(); // CAPTURA O TEMPO EXATO NO CELULAR
+    
+    laneResults = new Array(lanes).fill(0);
+    elapsed = 0;
+    renderLanesGrid();
+    setUIState('running');
+    startTimer();
+    startPolling();
+    
+    // Notifica ESP com o modo, raias e o TEMPO DA LARGADA
+    try {
+      await fetch('/start?mode=' + mode + '&lanes=' + lanes + '&t=' + tLargada, { signal: AbortSignal.timeout(2000) });
+    } catch(e) {}
+
+  } else if (appState === 'running') {
+    // Manual stop
+    clearInterval(pollInterval);
+    stopTimer();
+    setUIState('done');
+    showToast('Corrida parada manualmente');
+  }
+}
+// ─── Polling ESP status ───────────────────────────────────────────────────────
+function startPolling() {
+  clearInterval(pollInterval);
+  pollInterval = setInterval(async () => {
+    if (appState !== 'running') return;
+    try {
+      const r = await fetch('/status', { signal: AbortSignal.timeout(1500) });
+      if (!r.ok) return;
+      setOnline(true);
+      const d = await r.json();
+
+      if (mode === 'single') {
+        if (d.estado === 0 && d.tempos && d.tempos[0] > 0) {
+          clearInterval(pollInterval);
+          stopTimer();
+          elapsed = Math.round(d.tempos[0] * 1000);
+          $id('timer-big').textContent = fmtTime(elapsed);
+          laneResults = [elapsed];
+          setUIState('done');
+          saveRace();
+          showToast('✓ Tempo registrado!');
+        }
+      } else {
+        if (d.tempos) {
+          let allDone = true;
+          for (let i = 0; i < lanes; i++) {
+            const t = d.tempos[i];
+            if (t > 0 && laneResults[i] === 0) {
+              laneResults[i] = Math.round(t * 1000);
+              updateLaneResult(i, laneResults[i]);
+            }
+            if (laneResults[i] === 0) allDone = false;
+          }
+          if (allDone || d.estado === 0) {
+            clearInterval(pollInterval);
+            stopTimer();
+            // Pega melhor tempo no timer
+            const valid = laneResults.filter(t => t > 0);
+            if (valid.length) elapsed = Math.min(...valid);
+            $id('timer-big').textContent = fmtTime(elapsed);
+            setUIState('done');
+            saveRace();
+            showToast('✓ Todas as raias registradas!');
+          }
+        }
+      }
+    } catch(e) { setOnline(false); }
+  }, 300);
+}
+
+// ─── History ──────────────────────────────────────────────────────────────────
+function saveRace() {
+  const hist = JSON.parse(localStorage.getItem('chrono_hist') || '[]');
+  const name = $id('race-name').value.trim() || 'Corrida';
+  const now = new Date();
+  const entry = {
+    id: Date.now(),
+    name,
+    date: now.toLocaleDateString('pt-BR'),
+    time: now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+    mode,
+    lanes: mode === 'multi' ? lanes : 1,
+    results: mode === 'single' ? [elapsed] : laneResults.slice(0, lanes)
+  };
+  hist.unshift(entry);
+  localStorage.setItem('chrono_hist', JSON.stringify(hist.slice(0, 100)));
+}
+
+function renderHistory() {
+  const hist = JSON.parse(localStorage.getItem('chrono_hist') || '[]');
+  const el = $id('hist-list');
+  if (!hist.length) {
+    el.innerHTML = '<div class="empty-state"><i class="ti ti-trophy" aria-hidden="true"></i><p>Nenhuma corrida salva ainda</p></div>';
+    return;
+  }
+
+  el.innerHTML = hist.map((h, i) => {
+    const isOpen = !!openHistItems[h.id];
+    const best = h.results.length ? Math.min(...h.results.filter(t => t > 0)) : 0;
+    return `
+      <div class="hist-item ${h.mode}" id="hi-${h.id}">
+        <div class="hist-header-row">
+          <div onclick="toggleHist(${h.id})" style="flex:1;cursor:pointer">
+            <div class="hist-name">${escHtml(h.name)}</div>
+            <div class="hist-meta">
+              <span class="hist-mode-badge ${h.mode}">${h.mode === 'single' ? 'Single Lane' : 'Multi Lane · ' + h.lanes + ' raias'}</span>
+              <span class="hist-date">${h.date} às ${h.time}</span>
+            </div>
+            <div class="hist-preview" style="${isOpen ? 'display:none' : ''}">
+              ${h.mode === 'single' ? fmtTime(h.results[0]) : 'Melhor: ' + fmtTime(best)}
+              <i class="ti ti-chevron-down chevron" aria-hidden="true"></i>
+            </div>
+          </div>
+          <button class="del-btn" onclick="deleteHist(event,${h.id})" aria-label="Remover corrida">
+            <i class="ti ti-x" aria-hidden="true"></i>
+          </button>
+        </div>
+        <div class="hist-times${isOpen ? ' open' : ''}" id="ht-${h.id}">
+          ${h.results.map((t, j) => {
+            const isBest = h.mode === 'multi' && t === best && h.results.filter(r=>r>0).length > 1;
+            return `<div class="hist-time-row">
+              <span class="hist-time-label">${h.mode === 'single' ? 'Tempo final' : 'Raia ' + (j + 1)}</span>
+              <span class="hist-time-val${isBest ? ' gold' : ''}">${fmtTime(t)}${isBest ? ' 🥇' : ''}</span>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>`;
+  }).join('');
+}
+
+function toggleHist(id) {
+  openHistItems[id] = !openHistItems[id];
+  renderHistory();
+}
+
+function deleteHist(e, id) {
+  e.stopPropagation();
+  const hist = JSON.parse(localStorage.getItem('chrono_hist') || '[]').filter(h => h.id !== id);
+  localStorage.setItem('chrono_hist', JSON.stringify(hist));
+  delete openHistItems[id];
+  renderHistory();
+  showToast('Corrida removida');
+}
+
+function clearHistory() {
+  if (!confirm('Apagar todo o histórico de corridas?')) return;
+  localStorage.removeItem('chrono_hist');
+  openHistItems = {};
+  renderHistory();
+  showToast('Histórico apagado');
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Init ─────────────────────────────────────────────────────────────────────
+// Tenta auto-sync ao carregar
+(async () => {
+  try {
+    const r = await fetch('/status', { signal: AbortSignal.timeout(2000) });
+    if (r.ok) setOnline(true);
+  } catch(e) { setOnline(false); }
+})();
+</script>
+</body>
+</html>
