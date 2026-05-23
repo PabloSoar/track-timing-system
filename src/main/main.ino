@@ -6,6 +6,7 @@
 
 DNSServer dnsServer;
 const char *ssid = "Cronometro_Lidar";
+const char *password = "cronometro123"; // Minimo de 8 caracteres para WPA2
 const int largura_raia = 122;
 
 WebServer server(80);
@@ -31,16 +32,28 @@ unsigned long long getTempoSincronizado() {
   return millis() + offsetTempo;
 }
 
+void serveIndex() {
+  File f = LittleFS.open("/index.html", "r");
+  if (!f) {
+    server.send(500, "text/plain", "index.html nao encontrado");
+    return;
+  }
+
+  server.streamFile(f, "text/html");
+  f.close();
+}
+
 void setup() {
   Serial.begin(115200);
   tfLunaSerial.begin(115200, SERIAL_8N1, 16, 17);
 
   // 1. Sobe o Access Point PRIMEIRO
   IPAddress local_IP(192, 168, 4, 1);
-  IPAddress gateway(0, 0, 0, 0);
+  IPAddress gateway(192, 168, 4, 1);
   IPAddress subnet(255, 255, 255, 0);
+  WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(local_IP, gateway, subnet);
-  WiFi.softAP(ssid);
+  WiFi.softAP(ssid, password);
 
   // 2. Sobe o DNS logo após o AP
   dnsServer.start(53, "*", local_IP);
@@ -53,12 +66,7 @@ void setup() {
   }
 
   // 4. Registra as rotas
-  server.on("/", []() {
-    File f = LittleFS.open("/index.html", "r");
-    if (!f) { server.send(500, "text/plain", "index.html nao encontrado"); return; }
-    server.streamFile(f, "text/html");
-    f.close();
-  });
+  server.on("/", serveIndex);
 
 // Rota de Sincronização
   server.on("/sync", []() {
@@ -118,16 +126,16 @@ void setup() {
   });
 
   // 5. Captive portal por último, antes do server.begin()
-  auto redirect = []() {
-    server.sendHeader("Location", "http://192.168.4.1/", true);
-    server.send(302, "text/plain", "");
-  };
-  server.on("/generate_204", redirect);
-  server.on("/gen_204", redirect);
-  server.on("/hotspot-detect.html", redirect);
-  server.on("/ncsi.txt", redirect);
-  server.on("/connecttest.txt", redirect);
-  server.onNotFound(redirect);
+  // O DNS wildcard faz qualquer hostname apontar para o ESP32. Estas rotas
+  // cobrem as checagens comuns de Android, iOS/macOS e Windows.
+  server.on("/generate_204", serveIndex);
+  server.on("/gen_204", serveIndex);
+  server.on("/hotspot-detect.html", serveIndex);
+  server.on("/library/test/success.html", serveIndex);
+  server.on("/ncsi.txt", serveIndex);
+  server.on("/connecttest.txt", serveIndex);
+  server.on("/redirect", serveIndex);
+  server.onNotFound(serveIndex);
 
   server.begin();
 
