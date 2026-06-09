@@ -9,6 +9,8 @@ MODE="all"
 SKETCH_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD_DIR="$SKETCH_DIR/build"
 LITTLEFS_IMAGE="$BUILD_DIR/littlefs.bin"
+ARDUINO_BUILD_DIR="$BUILD_DIR/arduino"
+ARDUINO_OUTPUT_DIR="$BUILD_DIR/out"
 
 MKLITTLEFS="$HOME/.arduino15/packages/esp32/tools/mklittlefs/4.0.2-db0513a/mklittlefs"
 ESPTOOL="$HOME/.arduino15/packages/esp32/tools/esptool_py/5.2.0/esptool"
@@ -77,9 +79,16 @@ require_file() {
 
 upload_sketch() {
   require_command arduino-cli
+  mkdir -p "$ARDUINO_BUILD_DIR" "$ARDUINO_OUTPUT_DIR"
 
   echo "Compiling and uploading sketch to $PORT..."
-  arduino-cli compile --upload -p "$PORT" --fqbn "$FQBN" "$SKETCH_DIR"
+  arduino-cli compile \
+    --upload \
+    -p "$PORT" \
+    --fqbn "$FQBN" \
+    --build-path "$ARDUINO_BUILD_DIR" \
+    --output-dir "$ARDUINO_OUTPUT_DIR" \
+    "$SKETCH_DIR"
 }
 
 upload_littlefs() {
