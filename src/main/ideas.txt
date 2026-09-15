@@ -1,0 +1,1 @@
+colocar botoes para salvar os dados da corrida em csv e json, em vez de ficar salvando como cookie. se precisar de algo mais permanente

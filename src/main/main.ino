@@ -6,7 +6,16 @@
 
 DNSServer dnsServer;
 const char *ssid = "Cronometro_Lidar";
+const char *password = "cronometro123"; // Minimo de 8 caracteres para WPA2
 const int largura_raia = 122;
+const int forca_minima_deteccao = 100;
+const int distancia_min_single = 20;
+const int distancia_min_multi = 20;
+const unsigned long tempo_minimo_corrida_ms = 500;
+const unsigned long multi_tempo_limpo_ms = 150;
+const unsigned long multi_tempo_max_passagem_ms = 700;
+const unsigned long intervalo_log_distancia_ms = 100;
+const int serial_min_bytes_para_log = 16;
 
 WebServer server(80);
 HardwareSerial tfLunaSerial(2);
@@ -26,9 +35,183 @@ float tempoTotalSegundos = 0;
 int numeroRaias = 1;
 int raiasFinalizadas = 0;
 float temposRaias[6]; // Suporta até 6 raias
+bool passagemMultiAtiva = false;
+bool passagemMultiRegistrada = false;
+unsigned long passagemMultiInicio = 0;
+unsigned long passagemMultiUltimaLeitura = 0;
+unsigned long long passagemMultiTempoPrimeiraLeitura = 0;
+int passagemMultiContagemRaias[6];
+int distanciaLogPendente = 0;
+bool temDistanciaLogPendente = false;
+unsigned long ultimoLogDistanciaMs = 0;
 
 unsigned long long getTempoSincronizado() {
   return millis() + offsetTempo;
+}
+
+void resetPassagemMulti() {
+  passagemMultiAtiva = false;
+  passagemMultiRegistrada = false;
+  passagemMultiInicio = 0;
+  passagemMultiUltimaLeitura = 0;
+  passagemMultiTempoPrimeiraLeitura = 0;
+  for (int i = 0; i < 6; i++) passagemMultiContagemRaias[i] = 0;
+}
+
+void bufferizarLogDistancia(int distance) {
+  distanciaLogPendente = distance;
+  temDistanciaLogPendente = true;
+}
+
+void emitirLogDistancia() {
+  if (!temDistanciaLogPendente) return;
+
+  unsigned long agora = millis();
+  if (ultimoLogDistanciaMs != 0 &&
+      (agora - ultimoLogDistanciaMs) < intervalo_log_distancia_ms) {
+    return;
+  }
+
+  if (Serial.availableForWrite() < serial_min_bytes_para_log) {
+    return;
+  }
+
+  Serial.println(distanciaLogPendente);
+  temDistanciaLogPendente = false;
+  ultimoLogDistanciaMs = agora;
+}
+
+void registrarPassagemMulti() {
+  int indiceRaia = -1;
+  int maiorContagem = 0;
+
+  for (int i = 0; i < numeroRaias; i++) {
+    if (passagemMultiContagemRaias[i] > maiorContagem) {
+      maiorContagem = passagemMultiContagemRaias[i];
+      indiceRaia = i;
+    }
+  }
+
+  if (indiceRaia < 0 || temposRaias[indiceRaia] != 0.0) {
+    passagemMultiRegistrada = true;
+    return;
+  }
+
+  tempoChegada = passagemMultiTempoPrimeiraLeitura;
+  long long diferenca = (long long)tempoChegada - (long long)tempoLargada;
+  tempoTotalSegundos = diferenca / 1000.0;
+
+  if (tempoTotalSegundos > (tempo_minimo_corrida_ms / 1000.0)) {
+    temposRaias[indiceRaia] = tempoTotalSegundos;
+    raiasFinalizadas++;
+    Serial.print("Raia "); Serial.print(indiceRaia + 1);
+    Serial.print(" cruzou! Amostras: "); Serial.print(maiorContagem);
+    Serial.print(" - Tempo: "); Serial.println(temposRaias[indiceRaia], 3);
+  }
+
+  passagemMultiRegistrada = true;
+
+  if (raiasFinalizadas >= numeroRaias) {
+    estado = 0;
+    tfLunaSerial.write(desligar_sensor, 5);
+    Serial.println("Todas as raias finalizaram. Sensor DESLIGADO.");
+  }
+}
+
+void loop() {
+  dnsServer.processNextRequest();
+  server.handleClient();
+  emitirLogDistancia();
+
+  if (tfLunaSerial.available() >= 9) {
+    if (tfLunaSerial.read() == 0x59) {
+      if (tfLunaSerial.read() == 0x59) {
+        int dist_L = tfLunaSerial.read();
+        int dist_H = tfLunaSerial.read();
+        int amp_L = tfLunaSerial.read();
+        int amp_H = tfLunaSerial.read();
+        tfLunaSerial.read(); tfLunaSerial.read(); tfLunaSerial.read();
+
+        int distance = dist_L + (dist_H << 8);
+        int strength = amp_L + (amp_H << 8);
+
+        bufferizarLogDistancia(distance);
+
+        if (estado == 1) {
+          if (strength > forca_minima_deteccao && distance > distancia_min_single && distance < 200) {
+            tempoChegada = getTempoSincronizado();
+
+            // Força a matemática a aceitar negativos para evitar o "ovf"
+            long long diferenca = (long long)tempoChegada - (long long)tempoLargada;
+            tempoTotalSegundos = diferenca / 1000.0;
+
+            if (tempoTotalSegundos > (tempo_minimo_corrida_ms / 1000.0)) {
+              temposRaias[0] = tempoTotalSegundos;
+              estado = 0; // Finaliza
+
+              tfLunaSerial.write(desligar_sensor, 5);
+              Serial.print("Distância gatilho: ");
+              Serial.println(distance);
+              Serial.print("Tempo final calculado: ");
+              Serial.println(tempoTotalSegundos, 3);
+            }
+          }
+        }
+
+        if (estado == 2) {
+          unsigned long agora = millis();
+          bool leituraValida = strength > forca_minima_deteccao &&
+                              distance > distancia_min_multi &&
+                              distance < largura_raia * numeroRaias;
+
+          if (leituraValida) {
+            int indiceRaia = distance / largura_raia;
+
+            if (indiceRaia >= 0 && indiceRaia < numeroRaias) {
+              if (!passagemMultiAtiva) {
+                resetPassagemMulti();
+                passagemMultiAtiva = true;
+                passagemMultiInicio = agora;
+                passagemMultiTempoPrimeiraLeitura = getTempoSincronizado();
+              }
+
+              passagemMultiUltimaLeitura = agora;
+
+              if (!passagemMultiRegistrada) {
+                passagemMultiContagemRaias[indiceRaia]++;
+              }
+            }
+          }
+
+          if (passagemMultiAtiva && !passagemMultiRegistrada) {
+            bool passagemSaiuDoFeixe = (agora - passagemMultiUltimaLeitura) >= multi_tempo_limpo_ms;
+            bool passagemLongaDemais = (agora - passagemMultiInicio) >= multi_tempo_max_passagem_ms;
+
+            if (passagemSaiuDoFeixe || passagemLongaDemais) {
+              registrarPassagemMulti();
+            }
+          }
+
+          if (passagemMultiAtiva &&
+              passagemMultiRegistrada &&
+              (agora - passagemMultiUltimaLeitura) >= multi_tempo_limpo_ms) {
+            resetPassagemMulti();
+          }
+        }
+      }
+    }
+  }
+}
+
+void serveIndex() {
+  File f = LittleFS.open("/index.html", "r");
+  if (!f) {
+    server.send(500, "text/plain", "index.html nao encontrado");
+    return;
+  }
+
+  server.streamFile(f, "text/html");
+  f.close();
 }
 
 void setup() {
@@ -37,10 +220,11 @@ void setup() {
 
   // 1. Sobe o Access Point PRIMEIRO
   IPAddress local_IP(192, 168, 4, 1);
-  IPAddress gateway(0, 0, 0, 0);
+  IPAddress gateway(192, 168, 4, 1);
   IPAddress subnet(255, 255, 255, 0);
+  WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(local_IP, gateway, subnet);
-  WiFi.softAP(ssid);
+  WiFi.softAP(ssid, password);
 
   // 2. Sobe o DNS logo após o AP
   dnsServer.start(53, "*", local_IP);
@@ -53,12 +237,7 @@ void setup() {
   }
 
   // 4. Registra as rotas
-  server.on("/", []() {
-    File f = LittleFS.open("/index.html", "r");
-    if (!f) { server.send(500, "text/plain", "index.html nao encontrado"); return; }
-    server.streamFile(f, "text/html");
-    f.close();
-  });
+  server.on("/", serveIndex);
 
 // Rota de Sincronização
   server.on("/sync", []() {
@@ -107,6 +286,7 @@ void setup() {
     // Zera tudo para a nova corrida
     raiasFinalizadas = 0;
     for(int i=0; i<6; i++) temposRaias[i] = 0.0;
+    resetPassagemMulti();
 
     // Acorda o sensor LIDAR
     tfLunaSerial.write(ligar_sensor, 5);
@@ -118,16 +298,16 @@ void setup() {
   });
 
   // 5. Captive portal por último, antes do server.begin()
-  auto redirect = []() {
-    server.sendHeader("Location", "http://192.168.4.1/", true);
-    server.send(302, "text/plain", "");
-  };
-  server.on("/generate_204", redirect);
-  server.on("/gen_204", redirect);
-  server.on("/hotspot-detect.html", redirect);
-  server.on("/ncsi.txt", redirect);
-  server.on("/connecttest.txt", redirect);
-  server.onNotFound(redirect);
+  // O DNS wildcard faz qualquer hostname apontar para o ESP32. Estas rotas
+  // cobrem as checagens comuns de Android, iOS/macOS e Windows.
+  server.on("/generate_204", serveIndex);
+  server.on("/gen_204", serveIndex);
+  server.on("/hotspot-detect.html", serveIndex);
+  server.on("/library/test/success.html", serveIndex);
+  server.on("/ncsi.txt", serveIndex);
+  server.on("/connecttest.txt", serveIndex);
+  server.on("/redirect", serveIndex);
+  server.onNotFound(serveIndex);
 
   server.begin();
 
@@ -141,77 +321,3 @@ void setup() {
   tfLunaSerial.write(desligar_sensor, 5);
   Serial.println("Pronto!");
 }
-
-void loop() {
-  dnsServer.processNextRequest();
-  server.handleClient();
-
-  if (tfLunaSerial.available() >= 9) {
-    if (tfLunaSerial.read() == 0x59) {
-      if (tfLunaSerial.read() == 0x59) {
-        
-        int dist_L = tfLunaSerial.read();
-        int dist_H = tfLunaSerial.read();
-        int amp_L = tfLunaSerial.read();
-        int amp_H = tfLunaSerial.read();
-        tfLunaSerial.read(); tfLunaSerial.read(); tfLunaSerial.read(); 
-        
-        int distance = dist_L + (dist_H << 8);
-        int strength = amp_L + (amp_H << 8);
-
-        Serial.println(distance);
-
-        if (estado == 1){
-          if (strength > 100 && distance > 20 && distance < 200) {
-            
-            tempoChegada = getTempoSincronizado();
-            
-            // Força a matemática a aceitar negativos para evitar o "ovf"
-            long long diferenca = (long long)tempoChegada - (long long)tempoLargada;
-
-            tempoTotalSegundos = diferenca / 1000.0;
-
-            if (tempoTotalSegundos > 0.5){
-              temposRaias[0] = tempoTotalSegundos;
-              estado = 0; // Finaliza
-              
-              tfLunaSerial.write(desligar_sensor, 5);
-              Serial.print("Distância gatilho: ");
-              Serial.println(distance);
-              Serial.print("Tempo final calculado: ");
-              Serial.println(tempoTotalSegundos, 3);
-          }
-        }
-      }
-        if (estado == 2) {
-          if (strength > 100 && distance > 5 && distance < largura_raia * numeroRaias) {
-              int indiceRaia = (distance / largura_raia); 
-              if (temposRaias[indiceRaia] == 0.0) {
-                
-                tempoChegada = getTempoSincronizado();
-              
-                // Força a matemática a aceitar negativos para evitar o "ovf"
-                long long diferenca = (long long)tempoChegada - (long long)tempoLargada;
-                
-                tempoTotalSegundos = diferenca / 1000.0;
-
-                if (tempoTotalSegundos > 0.5){
-                  temposRaias[indiceRaia] = tempoTotalSegundos;
-                  raiasFinalizadas++;
-                  Serial.print("Raia "); Serial.print(indiceRaia + 1);
-                  Serial.print(" cruzou! (Distância: "); Serial.print(distance);
-                  Serial.print("cm) - Tempo: "); Serial.println(temposRaias[indiceRaia], 3);
-                }
-                
-                if (raiasFinalizadas >= numeroRaias) {
-                  estado = 0; // Finaliza
-                  tfLunaSerial.write(desligar_sensor, 5);
-                  Serial.println("Todas as raias finalizaram. Sensor DESLIGADO.");
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
