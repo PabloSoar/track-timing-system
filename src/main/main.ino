@@ -3,6 +3,7 @@
 #include <HardwareSerial.h>
 #include <LittleFS.h>
 #include <DNSServer.h>
+#include <ElegantOTA.h>
 
 DNSServer dnsServer;
 const char *ssid = "Cronometro_Lidar";
@@ -121,6 +122,7 @@ void registrarPassagemMulti() {
 void loop() {
   dnsServer.processNextRequest();
   server.handleClient();
+  ElegantOTA.loop();
   emitirLogDistancia();
 
   if (tfLunaSerial.available() >= 9) {
@@ -212,6 +214,29 @@ void serveIndex() {
 
   server.streamFile(f, "text/html");
   f.close();
+}
+
+// ─── ElegantOTA (atualização remota de firmware) ────────────────────────────
+void onOTAStart() {
+  Serial.println("OTA: atualizacao iniciada, desligando sensor...");
+  estado = 0;
+  tfLunaSerial.write(desligar_sensor, 5);
+}
+
+void onOTAProgress(size_t current, size_t final) {
+  static unsigned long ultimoLogOTA = 0;
+  if (millis() - ultimoLogOTA > 1000) {
+    ultimoLogOTA = millis();
+    Serial.printf("OTA: %u de %u bytes\n", (unsigned)current, (unsigned)final);
+  }
+}
+
+void onOTAEnd(bool success) {
+  if (success) {
+    Serial.println("OTA: atualizacao concluida com sucesso! Reiniciando...");
+  } else {
+    Serial.println("OTA: falha na atualizacao!");
+  }
 }
 
 void setup() {
@@ -308,6 +333,13 @@ void setup() {
   server.on("/connecttest.txt", serveIndex);
   server.on("/redirect", serveIndex);
   server.onNotFound(serveIndex);
+
+  // OTA remota
+  // atualizações podem ser feitas em http://192.168.4.1/update
+  ElegantOTA.begin(&server);
+  ElegantOTA.onStart(onOTAStart);
+  ElegantOTA.onProgress(onOTAProgress);
+  ElegantOTA.onEnd(onOTAEnd);
 
   server.begin();
 
